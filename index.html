@@ -1,0 +1,376 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GESTIÓN - Mudanzas</title>
+
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+<style>
+/* 🌌 BASE */
+body{
+margin:0;
+font-family:-apple-system,sans-serif;
+background: radial-gradient(circle at top,#1a1a2e,#0f0f1a); /* Un tono ligeramente distinto al SUM */
+color:#fff;
+overflow-x: hidden;
+}
+
+/* 🏠 BOTÓN VOLVER AL HUB */
+.btn-home {
+    position: fixed;
+    top: 15px;
+    left: 15px;
+    z-index: 9999999;
+    background: rgba(249, 115, 22, 0.9); /* Naranja para mudanzas */
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 45px;
+    height: 45px;
+    cursor: pointer;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+}
+
+/* 📅 CALENDARIO */
+#calendar{
+height:calc(100vh - 20px);
+margin:10px;
+background:#16213e;
+border-radius:15px;
+padding:10px;
+}
+
+/* 🧊 MODAL */
+.modal{
+position:fixed;
+inset:0;
+display:none;
+align-items:center;
+justify-content:center;
+background:rgba(0,0,0,.85);
+backdrop-filter:blur(10px);
+z-index:999999;
+}
+
+.modal-content{
+width:90%;
+max-width:380px;
+padding:25px;
+border-radius:20px;
+background:rgba(22, 33, 62, 0.9);
+border:1px solid rgba(255,255,255,0.1);
+box-shadow:0 10px 50px rgba(0,0,0,1);
+animation:fadeIn .25s ease;
+}
+
+@keyframes fadeIn{
+from{opacity:0; transform:translateY(20px);}
+to{opacity:1; transform:translateY(0);}
+}
+
+.input{
+width:100%;
+padding:14px;
+border-radius:12px;
+border:1px solid #2a3942;
+background:#1a252c;
+color:#fff;
+margin-top:10px;
+text-align:center;
+box-sizing: border-box;
+outline: none;
+}
+
+#results{
+background:#1c272e;
+border-radius:12px;
+max-height:150px;
+overflow-y:auto;
+margin-top:5px;
+border:1px solid #2a3942;
+}
+
+#results div{
+padding:12px;
+border-bottom:1px solid #2a3942;
+cursor:pointer;
+}
+
+.btn{
+width:100%;
+padding:14px;
+margin-top:10px;
+border:none;
+border-radius:12px;
+font-weight:bold;
+cursor:pointer;
+transition:.2s;
+display: block;
+text-align: center;
+text-decoration: none;
+box-sizing: border-box;
+}
+
+.btn:active{transform: scale(0.98);}
+
+.blue{ background: linear-gradient(135deg,#f97316,#ea580c); color:#fff; } /* Naranja */
+.green{ background: linear-gradient(135deg,#25d366,#128c7e); color:#fff; }
+.red{ background: linear-gradient(135deg,#ff5858,#ff2e2e); color:#fff; }
+.gray{ background: #333; color:#bbb; }
+
+.hidden { display: none !important; }
+
+@media(max-width:480px){
+#calendar{height:80vh;}
+}
+</style>
+</head>
+
+<body>
+
+<a href="https://vectorescomprados-pixel.github.io/Gestion-de-Consorcios/" class="btn-home">
+    <i class="fas fa-home"></i>
+</a>
+
+<div id="main-content">
+    <div id="calendar"></div>
+</div>
+
+<div id="modal" class="modal">
+    <div class="modal-content">
+        <h3 id="fecha-label" style="text-align: center; margin-top:0; color: #f97316;">MUDANZA</h3>
+        <p id="label-date" style="text-align: center; margin-bottom: 15px; font-weight: bold;"></p>
+
+        <div id="ui-search">
+            <input id="search" class="input" placeholder="Buscar UF o Inquilino" autocomplete="off">
+            <div id="results"></div>
+            <button id="btn-clear-test" class="btn red" style="display:none">BORRAR PRUEBAS</button>
+        </div>
+
+        <div id="card" style="display:none">
+            <p id="info-uf" style="text-align: center; font-size: 1.1em; background: #1a252c; padding: 10px; border-radius: 10px;"></p>
+            
+            <button id="btn-save" class="btn blue">AGENDAR MUDANZA</button>
+            <button id="btn-delete" class="btn red" style="display:none">CANCELAR MUDANZA</button>
+            <a id="btn-wa" class="btn green" style="display:none" target="_blank">NOTIFICAR POR WHATSAPP</a>
+        </div>
+
+        <button class="btn gray" onclick="cerrar()">Cerrar</button>
+        
+        </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getFirestore, collection, addDoc, onSnapshot, getDocs, doc, deleteDoc, updateDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+const PHONE = "5491131552679"; 
+const firebaseConfig = {
+    apiKey: "AIzaSyDxw26xM3pliNxo79LdvWkr0uOGdvCgiIo",
+    authDomain: "gestionuf-remoto.firebaseapp.com",
+    projectId: "gestionuf-remoto"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+let dataUFs = [], reservas = [], selUF = null;
+
+const formatFecha = (f) => {
+    if(!f) return "";
+    const [y,m,d] = f.split("-");
+    return `${d}-${m}-${y.slice(2)}`;
+};
+
+/* INICIO: CARGAR DATOS */
+const loadUFs = async () => {
+    try {
+        const snap = await getDocs(collection(db, "departamentos"));
+        dataUFs = snap.docs.map(d => ({
+            UF: d.data().UF || d.data().Unidad,
+            Inquilino: d.data().Inquilino || "Sin Nombre"
+        }));
+    } catch (e) { console.error("Error cargando UFs", e); }
+};
+loadUFs();
+
+/* CALENDARIO */
+const cal = new FullCalendar.Calendar(document.getElementById('calendar'), {
+    initialView: 'dayGridMonth',
+    locale: 'es',
+    firstDay: 1,
+    headerToolbar: { left: 'prev,next', center: 'title', right: '' },
+    dateClick: i => abrir(i.dateStr),
+    eventClick: i => {
+        i.jsEvent.preventDefault();
+        abrir(i.event.startStr);
+    }
+});
+cal.render();
+
+/* ESCUCHA TIEMPO REAL - COLECCIÓN MUDANZAS */
+onSnapshot(collection(db, "reservas_mudanzas"), snap => {
+    reservas = snap.docs.map(d => ({id: d.id, ...d.data()}));
+    cal.setOption('events', reservas.map(r => ({
+        title: `MUDANZA UF ${r.uf}`,
+        start: r.fecha,
+        backgroundColor: '#ea580c',
+        allDay: true
+    })));
+});
+
+/* MODAL CONTROL */
+window.abrir = (fecha) => {
+    // Validación de fecha pasada
+    const hoy = new Date();
+    hoy.setHours(0,0,0,0);
+    const fechaSeleccionada = new Date(fecha + "T00:00:00");
+
+    if(fechaSeleccionada < hoy) {
+        alert("No se pueden agendar mudanzas en fechas pasadas.");
+        return;
+    }
+
+    window.fechaSel = fecha;
+    selUF = null;
+    
+    document.getElementById('modal').style.display = "flex";
+    document.getElementById('label-date').innerText = formatFecha(fecha);
+    document.getElementById('ui-search').style.display = "block";
+    document.getElementById('card').style.display = "none";
+    document.getElementById('btn-wa').style.display = "none";
+    document.getElementById('btn-delete').style.display = "none";
+    document.getElementById('btn-save').style.display = "block";
+    document.getElementById('search').value = "";
+    document.getElementById('results').innerHTML = "";
+
+    const res = reservas.find(r => r.fecha === fecha);
+    if(res) {
+        window.modoEdit = true;
+        window.idDoc = res.id;
+        selUF = {UF: res.uf, Inquilino: res.inquilino};
+        showReservaInfo();
+        document.getElementById('btn-delete').style.display = "block";
+        document.getElementById('btn-save').innerText = "ACTUALIZAR DATOS";
+    } else {
+        window.modoEdit = false;
+        document.getElementById('btn-save').innerText = "AGENDAR MUDANZA";
+    }
+};
+
+window.cerrar = () => document.getElementById('modal').style.display = "none";
+
+const showReservaInfo = () => {
+    document.getElementById('ui-search').style.display = "none";
+    document.getElementById('card').style.display = "block";
+    document.getElementById('info-uf').innerText = `UF ${selUF.UF} - ${selUF.Inquilino}`;
+};
+
+// Hub de mudanzas (Opcional: puedes crear otra entrada en el hub si quieres)
+async function actualizarHub(texto) {
+    try {
+        const ref = doc(db, "resumen_consorcio", "proxima_mudanza");
+        await updateDoc(ref, { detalle: texto });
+    } catch (e) { console.log("Hub no configurado para mudanzas"); }
+}
+
+/* BUSCADOR */
+document.getElementById('search').oninput = e => {
+    const v = e.target.value.toLowerCase().trim();
+    const cont = document.getElementById('results');
+    const btnTest = document.getElementById('btn-clear-test');
+    
+    cont.innerHTML = "";
+    btnTest.style.display = (v === "borrar") ? "block" : "none";
+
+    if(!v || v === "borrar") return;
+
+    dataUFs.filter(u => u.Inquilino.toLowerCase().includes(v) || u.UF.toString().includes(v))
+    .slice(0, 5)
+    .forEach(u => {
+        const d = document.createElement('div');
+        d.innerText = `UF ${u.UF} - ${u.Inquilino}`;
+        d.onclick = () => {
+            selUF = u;
+            showReservaInfo();
+        };
+        cont.appendChild(d);
+    });
+};
+
+/* ACCIÓN: GUARDAR MUDANZA */
+document.getElementById('btn-save').onclick = async () => {
+    if(!selUF) return;
+
+    // Validación duplicados
+    if(!window.modoEdit) {
+        const existe = reservas.some(r => r.fecha === window.fechaSel);
+        if(existe) {
+            alert("Ya hay una mudanza programada para este día.");
+            return;
+        }
+    }
+
+    try {
+        const datos = {
+            fecha: window.fechaSel,
+            uf: selUF.UF,
+            inquilino: selUF.Inquilino,
+            tipo: "Mudanza"
+        };
+
+        if(window.modoEdit) {
+            await updateDoc(doc(db, "reservas_mudanzas", window.idDoc), datos);
+        } else {
+            await addDoc(collection(db, "reservas_mudanzas"), datos);
+        }
+
+        actualizarHub(`${formatFecha(window.fechaSel)} - UF ${selUF.UF}`);
+
+        const msg = `*AVISO DE MUDANZA*\n📅 Fecha: ${formatFecha(window.fechaSel)}\n🏠 UF: ${selUF.UF}\n👤 Inquilino: ${selUF.Inquilino}\n📦 Estado: AGENDADA`;
+        setWA(msg);
+        alert("Mudanza agendada correctamente");
+    } catch(e) { alert("Error al guardar"); }
+};
+
+/* ACCIÓN: ELIMINAR */
+document.getElementById('btn-delete').onclick = async () => {
+    if(!confirm("¿Cancelar esta mudanza?")) return;
+    try {
+        await deleteDoc(doc(db, "reservas_mudanzas", window.idDoc));
+        actualizarHub("Sin mudanzas próximas");
+        const msg = `*CANCELACIÓN MUDANZA*\n📅 Fecha: ${formatFecha(window.fechaSel)}\n🏠 UF: ${selUF.UF}\n❌ Estado: CANCELADA`;
+        setWA(msg);
+        alert("Mudanza cancelada");
+        cerrar();
+    } catch(e) { alert("Error al eliminar"); }
+};
+
+/* LIMPIAR PRUEBAS MUDANZAS */
+document.getElementById('btn-clear-test').onclick = async () => {
+    if(!confirm("¿BORRAR TODAS LAS MUDANZAS?")) return;
+    try {
+        const snap = await getDocs(collection(db, "reservas_mudanzas"));
+        const batch = writeBatch(db);
+        snap.docs.forEach(d => batch.delete(d.ref));
+        await batch.commit();
+        alert("Sistema de mudanzas limpio");
+        cerrar();
+    } catch(e) { alert("Error"); }
+};
+
+function setWA(texto) {
+    const btn = document.getElementById('btn-wa');
+    btn.href = `https://wa.me/${PHONE}?text=${encodeURIComponent(texto)}`;
+    btn.style.display = "block";
+}
+</script>
+</body>
+</html>
